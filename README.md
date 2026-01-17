@@ -2,6 +2,48 @@
 
 基于 Aravis 开源库和 Qt5 框架开发的 GenICam 工业相机控制软件。
 
+## 核心特性
+
+### 无需厂商驱动
+
+**本项目在 Windows 平台使用通用 WinUSB 驱动，不安装相机厂商驱动，不依赖任何相机厂商 SDK 开发。**
+
+工业相机能够跨品牌通用的核心是 **GenICam 标准**（由 EMVA 欧洲机器视觉协会维护）：
+
+- **GenApi (XML 描述)**：每台相机内置 XML 文件，描述所有功能和寄存器地址
+- **SFNC (标准命名)**：统一参数命名（如 `ExposureTime`、`Gain`）
+- **USB3 Vision / GigE Vision**：物理层传输协议
+
+**技术栈对比：**
+
+| 传统方案 | 本项目方案 |
+|---------|-----------|
+| 厂商驱动（如海康MVS、巴斯勒Pylon） | **WinUSB** (Windows 通用驱动) |
+| 厂商SDK封装 | **Aravis** (开源 GenICam 实现) |
+| 单品牌绑定 | 支持所有符合 GenICam 标准的相机 |
+
+**原理：** `Aravis` 直接解析相机内部的 `GenICam XML`，通过 `WinUSB` 读写寄存器和图像流，**完全绕过厂商 SDK**。
+
+> [!IMPORTANT]
+>
+> [`GenICam`](https://www.emva.org/standards-technology/genicam/genicam-downloads/) 是一套全球标准，用来将工业相机与计算机软件应用（如机器视觉）衔接起来。它可实现图像处理、采集和传输中的措辞、接口和过程的同质化。
+>
+> 通过为所有用户提供一组通用名称和配置，无论供应商实现详情、功能或接口技术如何，都可确保通信。是 `GigE Vision`、`USB3 Vision`、`CoaXPress` 或 `Camera Link` 等高速视频标准的基础。
+
+### 1 工业相机驱动配置
+
+**USB3 Vision 相机（如 Blackfly S）：**
+
+1. 插入相机后，Windows 设备管理器会识别为"USB3 Vision Device"
+2. 使用 [Zadig](https://zadig.akeo.ie/) 工具安装 WinUSB 驱动：
+   - 选择设备：`USB3 Vision Device`
+   - 驱动选择：`WinUSB`
+   - 点击 `Install Driver`
+
+**GigE Vision 网口相机：**
+
+- 无需额外驱动，直接通过以太网通信
+
 ## 项目特点
 
 ✅ **开源驱动** - 使用 Aravis 库，不依赖相机厂商 SDK
@@ -10,7 +52,7 @@
 
 ✅ **模块化架构** - 控制逻辑与 UI 分离，易于扩展维护
 
-✅ **实时预览** - 支持连续采集和单帧采集
+✅ **高性能采集** - 独立线程采集，UI稳定60fps刷新
 
 ✅ **完整参数控制** - 曝光、增益、ROI 等参数可调
 
