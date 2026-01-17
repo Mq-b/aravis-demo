@@ -1,0 +1,7 @@
+build/
+vscode/
+.vs/
+.vscode/
+.claude/
+.cache/
+CMakeSettings.json
