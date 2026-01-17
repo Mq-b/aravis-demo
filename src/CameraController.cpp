@@ -368,7 +368,22 @@ void CameraController::stopAcquisition()
     m_acquisitionTimer->stop();
 
     GError *error = nullptr;
-    arv_camera_stop_acquisition(m_camera, &error);
+    const int maxRetries = 3;
+
+    for (int retry = 0; retry < maxRetries; ++retry) {
+        arv_camera_stop_acquisition(m_camera, &error);
+
+        if (!error) {
+            break;
+        }
+
+        if (retry < maxRetries - 1) {
+            g_error_free(error);
+            error = nullptr;
+            QThread::msleep(200);
+        }
+    }
+
     if (error) {
         qWarning() << "停止采集时出错:" << error->message;
         g_error_free(error);
