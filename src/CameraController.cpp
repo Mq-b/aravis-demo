@@ -1,21 +1,18 @@
 #include "CameraController.h"
 #include <QDebug>
-#include <QThread>
-#include <cstring>
+#include <QMetaObject>
+#include <chrono>
 
 CameraController::CameraController(QObject *parent)
     : QObject(parent)
     , m_camera(nullptr)
     , m_stream(nullptr)
-    , m_acquisitionTimer(new QTimer(this))
     , m_fpsTimer(new QTimer(this))
     , m_isConnected(false)
     , m_isAcquiring(false)
     , m_frameCount(0)
     , m_currentFPS(0.0)
 {
-    connect(m_acquisitionTimer, &QTimer::timeout,
-            this, &CameraController::onAcquisitionTimeout);
     connect(m_fpsTimer, &QTimer::timeout,
             this, &CameraController::updateFPS);
 }
@@ -116,7 +113,7 @@ bool CameraController::setExposureTime(double microseconds)
         if (error && g_error_matches(error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_TRANSFER_ERROR)) {
             g_error_free(error);
             error = nullptr;
-            QThread::msleep(100);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
 
@@ -189,7 +186,7 @@ bool CameraController::setGain(double gain)
         if (error && g_error_matches(error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_TRANSFER_ERROR)) {
             g_error_free(error);
             error = nullptr;
-            QThread::msleep(100);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
 
@@ -345,6 +342,16 @@ bool CameraController::startAcquisition()
         arv_stream_push_buffer(m_stream, arv_buffer_new(payload_size, nullptr));
     }
 
+    arv_camera_set_frame_rate(m_camera, 60.0, &error);
+    if (error) {
+        qDebug() << "设置帧率失败:" << error->message;
+        g_error_free(error);
+        error = nullptr;
+    } else {
+        double actual_fps = arv_camera_get_frame_rate(m_camera, nullptr);
+        qDebug() << "相机帧率已设置为:" << actual_fps << "fps";
+    }
+
     arv_camera_start_acquisition(m_camera, &error);
     if (error) {
         QString errorMsg = QString::fromUtf8(error->message);
@@ -358,7 +365,9 @@ bool CameraController::startAcquisition()
     m_isAcquiring = true;
     m_frameCount = 0;
     m_currentFPS = 0.0;
-    m_acquisitionTimer->start(1);
+    m_running = true;
+
+    m_captureThread = std::thread(&CameraController::captureLoop, this);
     m_fpsTimer->start(1000);
     emit acquisitionStarted();
     qDebug() << "图像采集已启动";
@@ -372,7 +381,12 @@ void CameraController::stopAcquisition()
         return;
     }
 
-    m_acquisitionTimer->stop();
+    m_running = false;
+
+    if (m_captureThread.joinable()) {
+        m_captureThread.join();
+    }
+
     m_fpsTimer->stop();
 
     GError *error = nullptr;
@@ -388,7 +402,7 @@ void CameraController::stopAcquisition()
         if (retry < maxRetries - 1) {
             g_error_free(error);
             error = nullptr;
-            QThread::msleep(200);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
     }
 
@@ -407,6 +421,43 @@ void CameraController::stopAcquisition()
     qDebug() << "图像采集已停止";
 }
 
+void CameraController::captureLoop()
+{
+    qDebug() << "采集线程启动";
+
+    while (m_running) {
+        ArvBuffer *buffer = arv_stream_try_pop_buffer(m_stream);
+
+        if (buffer) {
+            if (arv_buffer_get_status(buffer) == ARV_BUFFER_STATUS_SUCCESS) {
+                size_t buffer_size;
+                const void *buffer_data = arv_buffer_get_data(buffer, &buffer_size);
+
+                if (buffer_data) {
+                    gint width, height;
+                    arv_buffer_get_image_region(buffer, nullptr, nullptr, &width, &height);
+                    ArvPixelFormat pixel_format = arv_buffer_get_image_pixel_format(buffer);
+
+                    if (pixel_format == ARV_PIXEL_FORMAT_MONO_8 || pixel_format == 0x01080001) {
+                        QImage image(static_cast<const uchar*>(buffer_data), width, height, width, QImage::Format_Grayscale8);
+                        QImage imageCopy = image.copy();
+
+                        QMetaObject::invokeMethod(this, [this, imageCopy = std::move(imageCopy)]() {
+                            m_frameCount++;
+                            emit newFrameAvailable(imageCopy);
+                        }, Qt::QueuedConnection);
+                    }
+                }
+            }
+            arv_stream_push_buffer(m_stream, buffer);
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    qDebug() << "采集线程停止";
+}
+
 bool CameraController::isAcquiring() const
 {
     return m_isAcquiring;
@@ -419,18 +470,6 @@ QImage CameraController::grabSingleFrame(int timeoutMs)
         return QImage();
     }
 
-    // 如果正在连续采集，从流中获取
-    if (m_isAcquiring && m_stream) {
-        ArvBuffer *buffer = arv_stream_timeout_pop_buffer(m_stream, timeoutMs * 1000);
-        if (buffer) {
-            QImage image = convertArvBufferToQImage(buffer);
-            arv_stream_push_buffer(m_stream, buffer);
-            return image;
-        }
-        return QImage();
-    }
-
-    // 单帧采集模式
     GError *error = nullptr;
     ArvBuffer *buffer = arv_camera_acquisition(m_camera, timeoutMs * 1000, &error);
 
@@ -441,85 +480,31 @@ QImage CameraController::grabSingleFrame(int timeoutMs)
         return QImage();
     }
 
-    QImage image = convertArvBufferToQImage(buffer);
-    g_object_unref(buffer);
+    size_t buffer_size;
+    const void *buffer_data = arv_buffer_get_data(buffer, &buffer_size);
+    QImage image;
 
+    if (buffer_data) {
+        gint width, height;
+        arv_buffer_get_image_region(buffer, nullptr, nullptr, &width, &height);
+        ArvPixelFormat pixel_format = arv_buffer_get_image_pixel_format(buffer);
+
+        if (pixel_format == ARV_PIXEL_FORMAT_MONO_8 || pixel_format == 0x01080001) {
+            image = QImage(static_cast<const uchar*>(buffer_data), width, height, width, QImage::Format_Grayscale8).copy();
+        }
+    }
+
+    g_object_unref(buffer);
     return image;
 }
 
 // ========== 私有方法 ==========
-
-void CameraController::onAcquisitionTimeout()
-{
-    if (!m_isAcquiring || !m_stream) {
-        return;
-    }
-
-    ArvBuffer *buffer = arv_stream_try_pop_buffer(m_stream);
-    if (buffer) {
-        if (arv_buffer_get_status(buffer) == ARV_BUFFER_STATUS_SUCCESS) {
-            QImage image = convertArvBufferToQImage(buffer);
-            if (!image.isNull()) {
-                m_frameCount++;
-                emit newFrameAvailable(image);
-            }
-        }
-        arv_stream_push_buffer(m_stream, buffer);
-    }
-}
 
 void CameraController::updateFPS()
 {
     m_currentFPS = m_frameCount;
     m_frameCount = 0;
     emit fpsUpdated(m_currentFPS);
-}
-
-QImage CameraController::convertArvBufferToQImage(ArvBuffer *buffer)
-{
-    if (!buffer) {
-        return QImage();
-    }
-
-    ArvBufferStatus status = arv_buffer_get_status(buffer);
-    if (status != ARV_BUFFER_STATUS_SUCCESS) {
-        return QImage();
-    }
-
-    size_t bufferSize;
-    const void *data = arv_buffer_get_data(buffer, &bufferSize);
-    if (!data) {
-        return QImage();
-    }
-
-    gint width, height;
-    arv_buffer_get_image_region(buffer, nullptr, nullptr, &width, &height);
-
-    ArvPixelFormat pixelFormat = arv_buffer_get_image_pixel_format(buffer);
-
-    QImage image;
-
-    // GenICam Mono8: 0x01080001
-    if (pixelFormat == ARV_PIXEL_FORMAT_MONO_8 ||
-        pixelFormat == 0x01080001 ||
-        (pixelFormat & 0xFF0000) == 0x010000) {
-        image = QImage(static_cast<const uchar*>(data), width, height,
-                      width, QImage::Format_Grayscale8).copy();
-    }
-    else if (pixelFormat == ARV_PIXEL_FORMAT_RGB_8_PACKED ||
-             pixelFormat == ARV_PIXEL_FORMAT_BGR_8_PACKED) {
-        image = QImage(static_cast<const uchar*>(data), width, height,
-                      width * 3, QImage::Format_RGB888).copy();
-        if (pixelFormat == ARV_PIXEL_FORMAT_BGR_8_PACKED) {
-            image = image.rgbSwapped();
-        }
-    }
-    else {
-        image = QImage(static_cast<const uchar*>(data), width, height,
-                      width, QImage::Format_Grayscale8).copy();
-    }
-
-    return image;
 }
 
 void CameraController::cleanupResources()

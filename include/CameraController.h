@@ -5,6 +5,8 @@
 #include <QImage>
 #include <QString>
 #include <QTimer>
+#include <atomic>
+#include <thread>
 
 // 解决 Qt 和 GLib 的宏冲突
 #ifdef signals
@@ -76,17 +78,17 @@ Q_SIGNALS:
     void fpsUpdated(double fps);
 
 private Q_SLOTS:
-    void onAcquisitionTimeout();
     void updateFPS();
 
 private:
-    QImage convertArvBufferToQImage(ArvBuffer *buffer);
+    void captureLoop();
     void cleanupResources();
     QString getLastGError() const;
 
     ArvCamera *m_camera;
     ArvStream *m_stream;
-    QTimer *m_acquisitionTimer;
+    std::atomic_bool m_running{false};
+    std::thread m_captureThread;
     QTimer *m_fpsTimer;
 
     bool m_isConnected;
@@ -98,6 +100,7 @@ private:
 
     int m_frameCount;
     double m_currentFPS;
+    double m_maxFPS = 120.0;
 };
 
 #endif // CAMERACONTROLLER_H

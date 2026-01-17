@@ -8,6 +8,7 @@
 #include <QSplitter>
 #include <QStatusBar>
 #include <QDebug>
+#include <QElapsedTimer>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -434,11 +435,17 @@ void MainWindow::onNewFrame(const QImage &image)
         return;
     }
 
+    qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
+    if (currentTime - m_lastFrameTime < UI_FRAME_INTERVAL) {
+        return;
+    }
+    m_lastFrameTime = currentTime;
+
     QPixmap pixmap = QPixmap::fromImage(image);
     QSize labelSize = m_imageLabel->size();
 
     if (pixmap.width() > labelSize.width() || pixmap.height() > labelSize.height()) {
-        pixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        pixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::FastTransformation);
     }
 
     m_imageLabel->setPixmap(pixmap);

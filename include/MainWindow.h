@@ -71,6 +71,11 @@ private:
     // 相机控制器
     CameraController *m_cameraController;
 
+    // 帧率控制
+    qint64 m_lastFrameTime = 0;
+    static constexpr int UI_FPS = 60;
+    static constexpr int UI_FRAME_INTERVAL = 1000 / UI_FPS;
+
     // === UI组件 ===
 
     // 中央布局
