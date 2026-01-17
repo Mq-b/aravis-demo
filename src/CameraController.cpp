@@ -8,11 +8,16 @@ CameraController::CameraController(QObject *parent)
     , m_camera(nullptr)
     , m_stream(nullptr)
     , m_acquisitionTimer(new QTimer(this))
+    , m_fpsTimer(new QTimer(this))
     , m_isConnected(false)
     , m_isAcquiring(false)
+    , m_frameCount(0)
+    , m_currentFPS(0.0)
 {
     connect(m_acquisitionTimer, &QTimer::timeout,
             this, &CameraController::onAcquisitionTimeout);
+    connect(m_fpsTimer, &QTimer::timeout,
+            this, &CameraController::updateFPS);
 }
 
 CameraController::~CameraController()
@@ -336,11 +341,10 @@ bool CameraController::startAcquisition()
         return false;
     }
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 50; i++) {
         arv_stream_push_buffer(m_stream, arv_buffer_new(payload_size, nullptr));
     }
 
-    // 开始采集
     arv_camera_start_acquisition(m_camera, &error);
     if (error) {
         QString errorMsg = QString::fromUtf8(error->message);
@@ -352,7 +356,10 @@ bool CameraController::startAcquisition()
     }
 
     m_isAcquiring = true;
-    m_acquisitionTimer->start(33);  // 30 FPS
+    m_frameCount = 0;
+    m_currentFPS = 0.0;
+    m_acquisitionTimer->start(1);
+    m_fpsTimer->start(1000);
     emit acquisitionStarted();
     qDebug() << "图像采集已启动";
 
@@ -366,6 +373,7 @@ void CameraController::stopAcquisition()
     }
 
     m_acquisitionTimer->stop();
+    m_fpsTimer->stop();
 
     GError *error = nullptr;
     const int maxRetries = 3;
@@ -447,18 +455,24 @@ void CameraController::onAcquisitionTimeout()
         return;
     }
 
-    // 非阻塞方式获取缓冲区
     ArvBuffer *buffer = arv_stream_try_pop_buffer(m_stream);
     if (buffer) {
         if (arv_buffer_get_status(buffer) == ARV_BUFFER_STATUS_SUCCESS) {
             QImage image = convertArvBufferToQImage(buffer);
             if (!image.isNull()) {
+                m_frameCount++;
                 emit newFrameAvailable(image);
             }
         }
-        // 将缓冲区推回流
         arv_stream_push_buffer(m_stream, buffer);
     }
+}
+
+void CameraController::updateFPS()
+{
+    m_currentFPS = m_frameCount;
+    m_frameCount = 0;
+    emit fpsUpdated(m_currentFPS);
 }
 
 QImage CameraController::convertArvBufferToQImage(ArvBuffer *buffer)

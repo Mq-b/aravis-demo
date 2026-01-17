@@ -66,7 +66,6 @@ public:
     QImage grabSingleFrame(int timeoutMs = 5000);
 
 Q_SIGNALS:
-    // 信号
     void cameraConnected(const QString &model);
     void cameraDisconnected();
     void newFrameAvailable(const QImage &image);
@@ -74,28 +73,31 @@ Q_SIGNALS:
     void acquisitionStarted();
     void acquisitionStopped();
     void parameterChanged(const QString &paramName, double value);
+    void fpsUpdated(double fps);
 
 private Q_SLOTS:
     void onAcquisitionTimeout();
+    void updateFPS();
 
 private:
-    // 辅助函数
     QImage convertArvBufferToQImage(ArvBuffer *buffer);
     void cleanupResources();
     QString getLastGError() const;
 
-    // 成员变量
     ArvCamera *m_camera;
     ArvStream *m_stream;
     QTimer *m_acquisitionTimer;
+    QTimer *m_fpsTimer;
 
     bool m_isConnected;
     bool m_isAcquiring;
 
-    // 缓存的相机信息
     QString m_cameraModel;
     QString m_cameraVendor;
     QString m_cameraSerial;
+
+    int m_frameCount;
+    double m_currentFPS;
 };
 
 #endif // CAMERACONTROLLER_H

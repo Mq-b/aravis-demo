@@ -31,6 +31,8 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onAcquisitionStarted);
     connect(m_cameraController, &CameraController::acquisitionStopped,
             this, &MainWindow::onAcquisitionStopped);
+    connect(m_cameraController, &CameraController::fpsUpdated,
+            this, &MainWindow::onFPSUpdated);
 
     updateUIState();
     logMessage("应用程序启动成功");
@@ -441,12 +443,25 @@ void MainWindow::onNewFrame(const QImage &image)
 
     m_imageLabel->setPixmap(pixmap);
     m_imageLabel->resize(pixmap.size());
+}
 
-    QString format = (image.format() == QImage::Format_Grayscale8) ? "灰度8位" : "彩色";
-    m_imageInfoLabel->setText(QString("分辨率: %1x%2 | 格式: %3")
-                              .arg(image.width())
-                              .arg(image.height())
-                              .arg(format));
+void MainWindow::onFPSUpdated(double fps)
+{
+    if (!m_cameraController->isAcquiring()) {
+        return;
+    }
+
+    int x, y, width, height;
+    if (!m_cameraController->getROI(x, y, width, height)) {
+        return;
+    }
+
+    QString format = "灰度8位";
+    m_imageInfoLabel->setText(QString("分辨率: %1x%2 | 格式: %3 | FPS: %4")
+                              .arg(width)
+                              .arg(height)
+                              .arg(format)
+                              .arg(fps, 0, 'f', 1));
 }
 
 void MainWindow::onError(const QString &errorMsg)

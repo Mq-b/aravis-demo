@@ -51,6 +51,7 @@ private Q_SLOTS:
     void onError(const QString &errorMsg);
     void onAcquisitionStarted();
     void onAcquisitionStopped();
+    void onFPSUpdated(double fps);
 
 private:
     // UI初始化
