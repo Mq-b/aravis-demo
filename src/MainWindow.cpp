@@ -7,6 +7,7 @@
 #include <QScrollArea>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -427,26 +428,25 @@ void MainWindow::onCameraDisconnected()
 
 void MainWindow::onNewFrame(const QImage &image)
 {
-    if (!image.isNull()) {
-        // 缩放图像以适应显示区域
-        QPixmap pixmap = QPixmap::fromImage(image);
-        QSize labelSize = m_imageLabel->size();
-
-        // 保持宽高比缩放
-        if (pixmap.width() > labelSize.width() || pixmap.height() > labelSize.height()) {
-            pixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        }
-
-        m_imageLabel->setPixmap(pixmap);
-        m_imageLabel->resize(pixmap.size());
-
-        // 更新图像信息
-        QString format = (image.format() == QImage::Format_Grayscale8) ? "灰度8位" : "彩色";
-        m_imageInfoLabel->setText(QString("分辨率: %1x%2 | 格式: %3")
-                                  .arg(image.width())
-                                  .arg(image.height())
-                                  .arg(format));
+    if (image.isNull()) {
+        return;
     }
+
+    QPixmap pixmap = QPixmap::fromImage(image);
+    QSize labelSize = m_imageLabel->size();
+
+    if (pixmap.width() > labelSize.width() || pixmap.height() > labelSize.height()) {
+        pixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+
+    m_imageLabel->setPixmap(pixmap);
+    m_imageLabel->resize(pixmap.size());
+
+    QString format = (image.format() == QImage::Format_Grayscale8) ? "灰度8位" : "彩色";
+    m_imageInfoLabel->setText(QString("分辨率: %1x%2 | 格式: %3")
+                              .arg(image.width())
+                              .arg(image.height())
+                              .arg(format));
 }
 
 void MainWindow::onError(const QString &errorMsg)
@@ -492,31 +492,38 @@ void MainWindow::updateParameterBounds()
         return;
     }
 
-    // 更新曝光时间范围
     if (m_cameraController->getExposureTimeBounds(m_exposureMin, m_exposureMax)) {
         m_exposureSpinBox->setRange(m_exposureMin, m_exposureMax);
         m_exposureSlider->setRange(static_cast<int>(m_exposureMin),
                                    static_cast<int>(qMin(m_exposureMax, 100000.0)));
 
         double currentExposure = m_cameraController->getExposureTime();
-        m_exposureSpinBox->setValue(currentExposure);
+        if (currentExposure > 0) {
+            m_exposureSpinBox->blockSignals(true);
+            m_exposureSpinBox->setValue(currentExposure);
+            m_exposureSpinBox->blockSignals(false);
+        }
+
         logMessage(QString("曝光范围: %1 - %2 μs")
                    .arg(m_exposureMin).arg(m_exposureMax));
     }
 
-    // 更新增益范围
     if (m_cameraController->getGainBounds(m_gainMin, m_gainMax)) {
         m_gainSpinBox->setRange(m_gainMin, m_gainMax);
         m_gainSlider->setRange(static_cast<int>(m_gainMin * 10),
                               static_cast<int>(m_gainMax * 10));
 
         double currentGain = m_cameraController->getGain();
-        m_gainSpinBox->setValue(currentGain);
+        if (currentGain >= 0) {
+            m_gainSpinBox->blockSignals(true);
+            m_gainSpinBox->setValue(currentGain);
+            m_gainSpinBox->blockSignals(false);
+        }
+
         logMessage(QString("增益范围: %1 - %2 dB")
                    .arg(m_gainMin).arg(m_gainMax));
     }
 
-    // 更新ROI范围
     if (m_cameraController->getROIBounds(m_roiMaxWidth, m_roiMaxHeight)) {
         m_roiXSpinBox->setMaximum(m_roiMaxWidth);
         m_roiYSpinBox->setMaximum(m_roiMaxHeight);
@@ -525,10 +532,20 @@ void MainWindow::updateParameterBounds()
 
         int x, y, width, height;
         if (m_cameraController->getROI(x, y, width, height)) {
+            m_roiXSpinBox->blockSignals(true);
+            m_roiYSpinBox->blockSignals(true);
+            m_roiWidthSpinBox->blockSignals(true);
+            m_roiHeightSpinBox->blockSignals(true);
+
             m_roiXSpinBox->setValue(x);
             m_roiYSpinBox->setValue(y);
             m_roiWidthSpinBox->setValue(width);
             m_roiHeightSpinBox->setValue(height);
+
+            m_roiXSpinBox->blockSignals(false);
+            m_roiYSpinBox->blockSignals(false);
+            m_roiWidthSpinBox->blockSignals(false);
+            m_roiHeightSpinBox->blockSignals(false);
         }
 
         logMessage(QString("传感器尺寸: %1x%2")

@@ -1,5 +1,6 @@
 #include "CameraController.h"
 #include <QDebug>
+#include <QThread>
 #include <cstring>
 
 CameraController::CameraController(QObject *parent)
@@ -28,7 +29,6 @@ bool CameraController::connectCamera(const QString &cameraId)
 
     GError *error = nullptr;
 
-    // 如果未指定相机ID，连接第一个可用相机
     if (cameraId.isEmpty()) {
         m_camera = arv_camera_new(nullptr, &error);
     } else {
@@ -42,7 +42,6 @@ bool CameraController::connectCamera(const QString &cameraId)
         return false;
     }
 
-    // 获取相机信息
     m_cameraModel = QString::fromUtf8(arv_camera_get_model_name(m_camera, nullptr));
     m_cameraVendor = QString::fromUtf8(arv_camera_get_vendor_name(m_camera, nullptr));
     m_cameraSerial = QString::fromUtf8(arv_camera_get_device_serial_number(m_camera, nullptr));
@@ -98,7 +97,26 @@ bool CameraController::setExposureTime(double microseconds)
     }
 
     GError *error = nullptr;
-    arv_camera_set_exposure_time(m_camera, microseconds, &error);
+
+    // Retry for USB3 Vision access-denied errors during initialization
+    const int maxRetries = 3;
+    for (int retry = 0; retry < maxRetries; ++retry) {
+        arv_camera_set_exposure_time(m_camera, microseconds, &error);
+
+        if (!error) {
+            emit parameterChanged("ExposureTime", microseconds);
+            return true;
+        }
+
+        if (error && g_error_matches(error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_TRANSFER_ERROR)) {
+            g_error_free(error);
+            error = nullptr;
+            QThread::msleep(100);
+            continue;
+        }
+
+        break;
+    }
 
     if (error) {
         QString errorMsg = QString::fromUtf8(error->message);
@@ -107,8 +125,7 @@ bool CameraController::setExposureTime(double microseconds)
         return false;
     }
 
-    emit parameterChanged("ExposureTime", microseconds);
-    return true;
+    return false;
 }
 
 double CameraController::getExposureTime() const
@@ -155,7 +172,24 @@ bool CameraController::setGain(double gain)
     }
 
     GError *error = nullptr;
-    arv_camera_set_gain(m_camera, gain, &error);
+    const int maxRetries = 3;
+    for (int retry = 0; retry < maxRetries; ++retry) {
+        arv_camera_set_gain(m_camera, gain, &error);
+
+        if (!error) {
+            emit parameterChanged("Gain", gain);
+            return true;
+        }
+
+        if (error && g_error_matches(error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_TRANSFER_ERROR)) {
+            g_error_free(error);
+            error = nullptr;
+            QThread::msleep(100);
+            continue;
+        }
+
+        break;
+    }
 
     if (error) {
         QString errorMsg = QString::fromUtf8(error->message);
@@ -164,8 +198,7 @@ bool CameraController::setGain(double gain)
         return false;
     }
 
-    emit parameterChanged("Gain", gain);
-    return true;
+    return false;
 }
 
 double CameraController::getGain() const
@@ -292,9 +325,19 @@ bool CameraController::startAcquisition()
         return false;
     }
 
-    // 为流推送缓冲区
+    // Allocate buffers based on actual payload size
+    gint payload_size = arv_camera_get_payload(m_camera, &error);
+    if (error) {
+        QString errorMsg = QString::fromUtf8(error->message);
+        g_error_free(error);
+        g_object_unref(m_stream);
+        m_stream = nullptr;
+        emit errorOccurred(QString("获取缓冲区大小失败: %1").arg(errorMsg));
+        return false;
+    }
+
     for (int i = 0; i < 5; i++) {
-        arv_stream_push_buffer(m_stream, arv_buffer_new(512 * 512, nullptr));
+        arv_stream_push_buffer(m_stream, arv_buffer_new(payload_size, nullptr));
     }
 
     // 开始采集
@@ -409,9 +452,13 @@ QImage CameraController::convertArvBufferToQImage(ArvBuffer *buffer)
         return QImage();
     }
 
+    ArvBufferStatus status = arv_buffer_get_status(buffer);
+    if (status != ARV_BUFFER_STATUS_SUCCESS) {
+        return QImage();
+    }
+
     size_t bufferSize;
     const void *data = arv_buffer_get_data(buffer, &bufferSize);
-
     if (!data) {
         return QImage();
     }
@@ -421,32 +468,26 @@ QImage CameraController::convertArvBufferToQImage(ArvBuffer *buffer)
 
     ArvPixelFormat pixelFormat = arv_buffer_get_image_pixel_format(buffer);
 
-    // 根据像素格式转换
     QImage image;
 
-    switch (pixelFormat) {
-        case ARV_PIXEL_FORMAT_MONO_8:
-            // 8位灰度图
-            image = QImage(static_cast<const uchar*>(data), width, height,
-                          width, QImage::Format_Grayscale8).copy();
-            break;
-
-        case ARV_PIXEL_FORMAT_RGB_8_PACKED:
-        case ARV_PIXEL_FORMAT_BGR_8_PACKED:
-            // RGB/BGR 8位彩色图
-            image = QImage(static_cast<const uchar*>(data), width, height,
-                          width * 3, QImage::Format_RGB888).copy();
-            if (pixelFormat == ARV_PIXEL_FORMAT_BGR_8_PACKED) {
-                image = image.rgbSwapped();
-            }
-            break;
-
-        default:
-            qWarning() << "不支持的像素格式:" << pixelFormat;
-            // 尝试作为灰度图处理
-            image = QImage(static_cast<const uchar*>(data), width, height,
-                          width, QImage::Format_Grayscale8).copy();
-            break;
+    // GenICam Mono8: 0x01080001
+    if (pixelFormat == ARV_PIXEL_FORMAT_MONO_8 ||
+        pixelFormat == 0x01080001 ||
+        (pixelFormat & 0xFF0000) == 0x010000) {
+        image = QImage(static_cast<const uchar*>(data), width, height,
+                      width, QImage::Format_Grayscale8).copy();
+    }
+    else if (pixelFormat == ARV_PIXEL_FORMAT_RGB_8_PACKED ||
+             pixelFormat == ARV_PIXEL_FORMAT_BGR_8_PACKED) {
+        image = QImage(static_cast<const uchar*>(data), width, height,
+                      width * 3, QImage::Format_RGB888).copy();
+        if (pixelFormat == ARV_PIXEL_FORMAT_BGR_8_PACKED) {
+            image = image.rgbSwapped();
+        }
+    }
+    else {
+        image = QImage(static_cast<const uchar*>(data), width, height,
+                      width, QImage::Format_Grayscale8).copy();
     }
 
     return image;

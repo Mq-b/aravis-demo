@@ -1,4 +1,3 @@
-// 必须先包含 arv.h，然后再包含 Qt 头文件，避免宏冲突
 #include <arv.h>
 #include <iostream>
 #include <QApplication>

@@ -5,7 +5,6 @@
 #include <QImage>
 #include <QString>
 #include <QTimer>
-#include <memory>
 
 // 解决 Qt 和 GLib 的宏冲突
 #ifdef signals
