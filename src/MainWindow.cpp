@@ -9,6 +9,9 @@
 #include <QStatusBar>
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QCoreApplication>
+#include <chrono>
+#include <thread>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -338,6 +341,74 @@ void MainWindow::onDisconnectClicked()
 void MainWindow::onStartAcquisitionClicked()
 {
     logMessage("启动连续采集...");
+
+    if (!m_cameraController->isConnected()) {
+        logMessage("错误: 相机未连接", true);
+        return;
+    }
+
+    // 如果正在采集，先停止以便应用新参数
+    if (m_cameraController->isAcquiring()) {
+        logMessage("先停止当前采集以应用新参数...");
+        m_cameraController->stopAcquisition();
+
+        // 等待采集完全停止
+        for (int i = 0; i < 20; i++) {
+            if (!m_cameraController->isAcquiring()) {
+                break;
+            }
+            QCoreApplication::processEvents();
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+
+        if (m_cameraController->isAcquiring()) {
+            logMessage("错误: 无法停止采集", true);
+            return;
+        }
+
+        logMessage("采集已停止");
+    }
+
+    // 应用所有UI参数(必须在未采集状态下)
+    logMessage("正在应用参数...");
+
+    bool allSuccess = true;
+
+    // 应用曝光时间
+    double exposure = m_exposureSpinBox->value();
+    if (m_cameraController->setExposureTime(exposure)) {
+        logMessage(QString("  ✓ 曝光: %1 μs").arg(exposure, 0, 'f', 0));
+    } else {
+        logMessage("  ✗ 曝光设置失败", true);
+        allSuccess = false;
+    }
+
+    // 应用增益
+    double gain = m_gainSpinBox->value();
+    if (m_cameraController->setGain(gain)) {
+        logMessage(QString("  ✓ 增益: %1 dB").arg(gain, 0, 'f', 1));
+    } else {
+        logMessage("  ✗ 增益设置失败", true);
+        allSuccess = false;
+    }
+
+    // 应用ROI
+    int x = m_roiXSpinBox->value();
+    int y = m_roiYSpinBox->value();
+    int width = m_roiWidthSpinBox->value();
+    int height = m_roiHeightSpinBox->value();
+    if (m_cameraController->setROI(x, y, width, height)) {
+        logMessage(QString("  ✓ ROI: (%1,%2,%3x%4)").arg(x).arg(y).arg(width).arg(height));
+    } else {
+        logMessage("  ✗ ROI设置失败", true);
+        allSuccess = false;
+    }
+
+    if (!allSuccess) {
+        logMessage("警告: 部分参数设置失败，将使用当前相机参数", true);
+    }
+
+    // 开始采集
     m_cameraController->startAcquisition();
 }
 

@@ -50,22 +50,17 @@ bool CameraController::connectCamera(const QString &cameraId)
     m_cameraVendor = QString::fromUtf8(arv_camera_get_vendor_name(m_camera, nullptr));
     m_cameraSerial = QString::fromUtf8(arv_camera_get_device_serial_number(m_camera, nullptr));
 
-    // 必须先关闭自动曝光，才能设置曝光时间
-    arv_camera_set_exposure_time_auto(m_camera, ARV_AUTO_OFF, &error);
-    if (error) {
-        qDebug() << "关闭自动曝光失败:" << error->message;
-        g_error_free(error);
-        error = nullptr;
+    // 确保相机处于停止状态
+    GError *stopError = nullptr;
+    arv_camera_stop_acquisition(m_camera, &stopError);
+    if (stopError) {
+        // 如果相机本来就是停止状态，这个错误可以忽略
+        qDebug() << "停止采集(如果有):" << stopError->message;
+        g_error_free(stopError);
     }
-    // 设置曝光时间为800微秒（0.8毫秒）以支持更高帧率
-    arv_camera_set_exposure_time(m_camera, 800.0, &error);
-    if (error) {
-        qDebug() << "设置默认曝光时间失败:" << error->message;
-        g_error_free(error);
-        error = nullptr;
-    } else {
-        qDebug() << "默认曝光时间已设置为: 800μs";
-    }
+
+    // 等待一下让相机稳定 确保第一次设置 ROI 成功
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     m_isConnected = true;
     emit cameraConnected(m_cameraModel);
@@ -200,8 +195,17 @@ bool CameraController::setGain(double gain)
         emit errorOccurred("相机未连接");
         return false;
     }
-
+    
+    // 先关闭自动增益
     GError *error = nullptr;
+    arv_camera_set_gain_auto(m_camera, ARV_AUTO_OFF, &error);
+    if (error) {
+        QString errorMsg = QString::fromUtf8(error->message);
+        g_error_free(error);
+        emit errorOccurred(QString("关闭自动增益失败: %1").arg(errorMsg));
+        return false;
+    }
+
     const int maxRetries = 3;
     for (int retry = 0; retry < maxRetries; ++retry) {
         arv_camera_set_gain(m_camera, gain, &error);
@@ -274,17 +278,29 @@ bool CameraController::setROI(int x, int y, int width, int height)
         return false;
     }
 
+    if (m_isAcquiring) {
+        emit errorOccurred("ROI设置失败: 采集正在运行，请先停止采集");
+        return false;
+    }
+
     GError *error = nullptr;
+
+    qDebug() << "尝试设置ROI:" << x << y << width << height;
+    qDebug() << "当前isAcquiring状态:" << m_isAcquiring;
+    qDebug() << "当前stream指针:" << (void*)m_stream;
+
     arv_camera_set_region(m_camera, x, y, width, height, &error);
 
     if (error) {
         QString errorMsg = QString::fromUtf8(error->message);
         g_error_free(error);
+        qDebug() << "setROI GError详情:" << errorMsg;
         emit errorOccurred(QString("设置ROI失败: %1").arg(errorMsg));
         return false;
     }
 
-    emit parameterChanged("ROI", 0);  // 通知ROI已更改
+    qDebug() << "ROI设置成功";
+    emit parameterChanged("ROI", 0);
     return true;
 }
 
