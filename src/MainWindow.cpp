@@ -237,9 +237,12 @@ void MainWindow::createParameterPanel()
     connect(m_gainSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, &MainWindow::onGainChanged);
     connect(m_gainSlider, &QSlider::valueChanged, this, [this](int value) {
+        double gainValue = value / 10.0;
         m_gainSpinBox->blockSignals(true);
-        m_gainSpinBox->setValue(value / 10.0);
+        m_gainSpinBox->setValue(gainValue);
         m_gainSpinBox->blockSignals(false);
+        // 手动调用onGainChanged，因为SpinBox信号被阻止了
+        onGainChanged(gainValue);
     });
 
     gainLayout->addWidget(m_gainSpinBox);
@@ -383,14 +386,8 @@ void MainWindow::onStartAcquisitionClicked()
         allSuccess = false;
     }
 
-    // 应用增益
-    double gain = m_gainSpinBox->value();
-    if (m_cameraController->setGain(gain)) {
-        logMessage(QString("  ✓ 增益: %1 dB").arg(gain, 0, 'f', 1));
-    } else {
-        logMessage("  ✗ 增益设置失败", true);
-        allSuccess = false;
-    }
+    // 增益可以在采集时动态调整,这里不需要设置
+    // 用户可以通过UI控件实时调整
 
     // 应用ROI
     int x = m_roiXSpinBox->value();
@@ -639,8 +636,23 @@ void MainWindow::updateUIState()
     m_stopAcquisitionButton->setEnabled(isConnected && isAcquiring);
     m_grabFrameButton->setEnabled(isConnected && !isAcquiring);
 
-    // 参数控件
-    m_parameterGroup->setEnabled(isConnected && !isAcquiring);
+    // 参数控件 - 增益可以在采集时调整,其他参数不行
+    if (isAcquiring) {
+        // 采集时:只允许调整增益
+        m_exposureSpinBox->setEnabled(false);
+        m_exposureSlider->setEnabled(false);
+        m_gainSpinBox->setEnabled(true);
+        m_gainSlider->setEnabled(true);
+        m_roiXSpinBox->setEnabled(false);
+        m_roiYSpinBox->setEnabled(false);
+        m_roiWidthSpinBox->setEnabled(false);
+        m_roiHeightSpinBox->setEnabled(false);
+        m_setROIButton->setEnabled(false);
+        m_resetROIButton->setEnabled(false);
+    } else {
+        // 未采集时:所有参数都可以调整(前提是已连接)
+        m_parameterGroup->setEnabled(isConnected);
+    }
 }
 
 void MainWindow::logMessage(const QString &msg, bool isError)

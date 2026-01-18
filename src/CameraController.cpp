@@ -195,39 +195,48 @@ bool CameraController::setGain(double gain)
         emit errorOccurred("相机未连接");
         return false;
     }
-    
-    // 先关闭自动增益
-    GError *error = nullptr;
-    arv_camera_set_gain_auto(m_camera, ARV_AUTO_OFF, &error);
-    if (error) {
-        QString errorMsg = QString::fromUtf8(error->message);
-        g_error_free(error);
-        emit errorOccurred(QString("关闭自动增益失败: %1").arg(errorMsg));
-        return false;
-    }
 
-    const int maxRetries = 3;
+    GError *error = nullptr;
+    const int maxRetries = 5;
+
     for (int retry = 0; retry < maxRetries; ++retry) {
+        // 尝试关闭自动增益(只在第一次尝试)
+        if (retry == 0) {
+            GError *autoError = nullptr;
+            arv_camera_set_gain_auto(m_camera, ARV_AUTO_OFF, &autoError);
+            if (autoError) {
+                qDebug() << "关闭自动增益失败(可忽略):" << autoError->message;
+                g_error_free(autoError);
+                // 继续尝试设置增益,不返回
+            }
+        }
+
+        // 设置增益值
         arv_camera_set_gain(m_camera, gain, &error);
 
         if (!error) {
+            qDebug() << "增益设置成功:" << gain << "dB";
             emit parameterChanged("Gain", gain);
             return true;
         }
 
-        if (error && g_error_matches(error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_TRANSFER_ERROR)) {
+        // 如果是传输错误,重试
+        if (g_error_matches(error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_TRANSFER_ERROR)) {
+            qDebug() << "增益设置传输错误,重试" << (retry + 1) << "/" << maxRetries;
             g_error_free(error);
             error = nullptr;
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
             continue;
         }
 
+        // 其他错误,直接退出
         break;
     }
 
     if (error) {
         QString errorMsg = QString::fromUtf8(error->message);
         g_error_free(error);
+        qDebug() << "设置增益失败:" << errorMsg;
         emit errorOccurred(QString("设置增益失败: %1").arg(errorMsg));
         return false;
     }
