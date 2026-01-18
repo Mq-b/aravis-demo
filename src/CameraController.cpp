@@ -48,6 +48,23 @@ bool CameraController::connectCamera(const QString &cameraId)
     m_cameraVendor = QString::fromUtf8(arv_camera_get_vendor_name(m_camera, nullptr));
     m_cameraSerial = QString::fromUtf8(arv_camera_get_device_serial_number(m_camera, nullptr));
 
+    // 必须先关闭自动曝光，才能设置曝光时间
+    arv_camera_set_exposure_time_auto(m_camera, ARV_AUTO_OFF, &error);
+    if (error) {
+        qDebug() << "关闭自动曝光失败:" << error->message;
+        g_error_free(error);
+        error = nullptr;
+    }
+    // 设置曝光时间为8000微秒（8毫秒）以支持更高帧率
+    arv_camera_set_exposure_time(m_camera, 8000.0, &error);
+    if (error) {
+        qDebug() << "设置默认曝光时间失败:" << error->message;
+        g_error_free(error);
+        error = nullptr;
+    } else {
+        qDebug() << "默认曝光时间已设置为: 8000μs";
+    }
+
     m_isConnected = true;
     emit cameraConnected(m_cameraModel);
     qDebug() << "相机连接成功:" << m_cameraModel << "SN:" << m_cameraSerial;
@@ -342,7 +359,7 @@ bool CameraController::startAcquisition()
         arv_stream_push_buffer(m_stream, arv_buffer_new(payload_size, nullptr));
     }
 
-    arv_camera_set_frame_rate(m_camera, 60.0, &error);
+    arv_camera_set_frame_rate(m_camera, 120.0, &error);
     if (error) {
         qDebug() << "设置帧率失败:" << error->message;
         g_error_free(error);
@@ -351,6 +368,10 @@ bool CameraController::startAcquisition()
         double actual_fps = arv_camera_get_frame_rate(m_camera, nullptr);
         qDebug() << "相机帧率已设置为:" << actual_fps << "fps";
     }
+
+    double exposure = arv_camera_get_exposure_time(m_camera, nullptr);
+    qDebug() << "当前曝光时间:" << exposure << "μs";
+    qDebug() << "理论最大帧率:" << (1000000.0 / exposure) << "fps";
 
     arv_camera_start_acquisition(m_camera, &error);
     if (error) {
@@ -452,7 +473,7 @@ void CameraController::captureLoop()
             arv_stream_push_buffer(m_stream, buffer);
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     qDebug() << "采集线程停止";

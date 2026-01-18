@@ -13,6 +13,7 @@
 #include <QHBoxLayout>
 #include <QGridLayout>
 #include "CameraController.h"
+#include "VideoWidget.h"
 
 /**
  * @brief 主窗口类 - 相机控制界面
@@ -73,7 +74,7 @@ private:
 
     // 帧率控制
     qint64 m_lastFrameTime = 0;
-    static constexpr int UI_FPS = 60;
+    static constexpr int UI_FPS = 120;
     static constexpr int UI_FRAME_INTERVAL = 1000 / UI_FPS;
 
     // === UI组件 ===
@@ -122,7 +123,7 @@ private:
 
     // 图像显示区域
     QGroupBox *m_imageGroup;
-    QLabel *m_imageLabel;
+    VideoWidget *m_videoWidget;
     QLabel *m_imageInfoLabel;
 
     // 状态信息区域

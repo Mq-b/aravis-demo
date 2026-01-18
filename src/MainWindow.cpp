@@ -296,25 +296,13 @@ void MainWindow::createImageDisplayPanel()
     m_imageGroup = new QGroupBox("图像预览", this);
     QVBoxLayout *imgLayout = new QVBoxLayout(m_imageGroup);
 
-    // 图像显示标签（带滚动区域）
-    QScrollArea *scrollArea = new QScrollArea(m_imageGroup);
-    scrollArea->setWidgetResizable(false);
-    scrollArea->setAlignment(Qt::AlignCenter);
-    scrollArea->setMinimumSize(800, 600);  // 设置滚动区域最小尺寸
+    m_videoWidget = new VideoWidget(m_imageGroup);
+    m_videoWidget->setMinimumSize(800, 600);
 
-    m_imageLabel = new QLabel(scrollArea);
-    m_imageLabel->setAlignment(Qt::AlignCenter);
-    m_imageLabel->setMinimumSize(800, 600);  // 增加图像显示区域的最小尺寸
-    m_imageLabel->setStyleSheet("QLabel { background-color: #2c2c2c; color: white; }");
-    m_imageLabel->setText("无图像");
-
-    scrollArea->setWidget(m_imageLabel);
-
-    // 图像信息标签
     m_imageInfoLabel = new QLabel("分辨率: - | 格式: - | FPS: -", m_imageGroup);
     m_imageInfoLabel->setStyleSheet("QLabel { padding: 5px; background-color: #f0f0f0; }");
 
-    imgLayout->addWidget(scrollArea, 1);
+    imgLayout->addWidget(m_videoWidget, 1);
     imgLayout->addWidget(m_imageInfoLabel);
 }
 
@@ -424,8 +412,7 @@ void MainWindow::onCameraDisconnected()
     logMessage("相机已断开");
     m_cameraInfoLabel->setText("未连接");
     m_statusBarLabel->setText("未连接");
-    m_imageLabel->clear();
-    m_imageLabel->setText("无图像");
+    m_videoWidget->clear();
     updateUIState();
 }
 
@@ -441,15 +428,7 @@ void MainWindow::onNewFrame(const QImage &image)
     }
     m_lastFrameTime = currentTime;
 
-    QPixmap pixmap = QPixmap::fromImage(image);
-    QSize labelSize = m_imageLabel->size();
-
-    if (pixmap.width() > labelSize.width() || pixmap.height() > labelSize.height()) {
-        pixmap = pixmap.scaled(labelSize, Qt::KeepAspectRatio, Qt::FastTransformation);
-    }
-
-    m_imageLabel->setPixmap(pixmap);
-    m_imageLabel->resize(pixmap.size());
+    m_videoWidget->setFrame(image);
 }
 
 void MainWindow::onFPSUpdated(double fps)

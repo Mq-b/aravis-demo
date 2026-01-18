@@ -14,11 +14,13 @@ set(SOURCES
     src/main.cpp
     src/CameraController.cpp
     src/MainWindow.cpp
+    src/VideoWidget.cpp
 )
 
 set(HEADERS
     include/CameraController.h
     include/MainWindow.h
+    include/VideoWidget.h
 )
 
 # 启用Qt MOC
