@@ -1,10 +1,18 @@
 # Aravis 相机控制系统
 
-基于 Aravis 开源库和 Qt5 框架开发的 GenICam 工业相机控制软件。
+基于 [Aravis](https://github.com/AravisProject/aravis) 开源库和 Qt5 框架开发的 Windows GenICam 工业相机控制软件。
 
-## 核心特性
+> [!NOTE]
+>
+> **开发环境**：本项目基于 **Aravis 0.9.1** 与 **Qt 5.12+** 构建。
+>
+> **版本选型**：Aravis `0.9.1` 目前为 **Pre-release（预发布）** 版本。若追求更高稳定性，建议使用最新正式版 [`0.8.35`](https://www.google.com/search?q=[https://github.com/AravisProject/aravis/releases/tag/0.8.35](https://github.com/AravisProject/aravis/releases/tag/0.8.35))。
+>
+> **便捷集成**：由于 Aravis 依赖项较多，手动编译复杂度较高。推荐通过 `vcpkg` 包管理器一键安装正式版。
+>
+> **注意事项**：若切换至 `0.8.35` 版本，请务必同步修改 `CMakeLists.txt` 中的 `pkg_check_modules` 版本参数以确保匹配。
 
-### 无需厂商驱动
+## 无需厂商驱动
 
 **本项目在 Windows 平台使用通用 WinUSB 驱动，不安装相机厂商驱动，不依赖任何相机厂商 SDK 开发。**
 
@@ -30,7 +38,7 @@
 >
 > 通过为所有用户提供一组通用名称和配置，无论供应商实现详情、功能或接口技术如何，都可确保通信。是 `GigE Vision`、`USB3 Vision`、`CoaXPress` 或 `Camera Link` 等高速视频标准的基础。
 
-### 1 工业相机驱动配置
+## 工业相机驱动配置
 
 **USB3 Vision 相机（如 Blackfly S）：**
 
