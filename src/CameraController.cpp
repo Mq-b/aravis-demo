@@ -12,6 +12,8 @@ CameraController::CameraController(QObject *parent)
     , m_isAcquiring(false)
     , m_frameCount(0)
     , m_currentFPS(0.0)
+    , m_arvReceivedCount(0)
+    , m_arvSuccessCount(0)
 {
     connect(m_fpsTimer, &QTimer::timeout,
             this, &CameraController::updateFPS);
@@ -55,14 +57,14 @@ bool CameraController::connectCamera(const QString &cameraId)
         g_error_free(error);
         error = nullptr;
     }
-    // 设置曝光时间为8000微秒（8毫秒）以支持更高帧率
-    arv_camera_set_exposure_time(m_camera, 8000.0, &error);
+    // 设置曝光时间为800微秒（0.8毫秒）以支持更高帧率
+    arv_camera_set_exposure_time(m_camera, 800.0, &error);
     if (error) {
         qDebug() << "设置默认曝光时间失败:" << error->message;
         g_error_free(error);
         error = nullptr;
     } else {
-        qDebug() << "默认曝光时间已设置为: 8000μs";
+        qDebug() << "默认曝光时间已设置为: 800μs";
     }
 
     m_isConnected = true;
@@ -116,6 +118,15 @@ bool CameraController::setExposureTime(double microseconds)
     }
 
     GError *error = nullptr;
+
+    // 必须先关闭自动曝光
+    arv_camera_set_exposure_time_auto(m_camera, ARV_AUTO_OFF, &error);
+    if (error) {
+        QString errorMsg = QString::fromUtf8(error->message);
+        g_error_free(error);
+        emit errorOccurred(QString("关闭自动曝光失败: %1").arg(errorMsg));
+        return false;
+    }
 
     // Retry for USB3 Vision access-denied errors during initialization
     const int maxRetries = 3;
@@ -385,6 +396,8 @@ bool CameraController::startAcquisition()
 
     m_isAcquiring = true;
     m_frameCount = 0;
+    m_arvReceivedCount = 0;
+    m_arvSuccessCount = 0;
     m_currentFPS = 0.0;
     m_running = true;
 
@@ -446,11 +459,25 @@ void CameraController::captureLoop()
 {
     qDebug() << "采集线程启动";
 
+    // 用于统计每秒的帧数
+    auto lastLogTime = std::chrono::steady_clock::now();
+    int loopCount = 0;              // 循环次数
+    int localArvReceived = 0;       // 本秒内arv接收的帧数
+    int localArvSuccess = 0;        // 本秒内成功的帧数
+    int localQtSent = 0;            // 本秒内发送给Qt的帧数
+
     while (m_running) {
         ArvBuffer *buffer = arv_stream_try_pop_buffer(m_stream);
+        loopCount++;
 
         if (buffer) {
+            m_arvReceivedCount++;
+            localArvReceived++;
+
             if (arv_buffer_get_status(buffer) == ARV_BUFFER_STATUS_SUCCESS) {
+                m_arvSuccessCount++;
+                localArvSuccess++;
+
                 size_t buffer_size;
                 const void *buffer_data = arv_buffer_get_data(buffer, &buffer_size);
 
@@ -467,13 +494,33 @@ void CameraController::captureLoop()
                             m_frameCount++;
                             emit newFrameAvailable(imageCopy);
                         }, Qt::QueuedConnection);
+
+                        localQtSent++;
                     }
                 }
             }
             arv_stream_push_buffer(m_stream, buffer);
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // 每秒输出一次统计信息
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastLogTime).count();
+        if (elapsed >= 1000) {
+            qDebug() << "=== Aravis采集统计 ===";
+            qDebug() << "循环次数/秒:" << loopCount;
+            qDebug() << "Arv接收帧数/秒:" << localArvReceived << "(总计:" << m_arvReceivedCount << ")";
+            qDebug() << "Arv成功帧数/秒:" << localArvSuccess << "(总计:" << m_arvSuccessCount << ")";
+            qDebug() << "Qt发送帧数/秒:" << localQtSent;
+
+            // 重置本秒计数器
+            loopCount = 0;
+            localArvReceived = 0;
+            localArvSuccess = 0;
+            localQtSent = 0;
+            lastLogTime = now;
+        }
+
+        // std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 
     qDebug() << "采集线程停止";
@@ -524,6 +571,7 @@ QImage CameraController::grabSingleFrame(int timeoutMs)
 void CameraController::updateFPS()
 {
     m_currentFPS = m_frameCount;
+    qDebug() << ">>> Qt层FPS:" << m_currentFPS << "(Qt接收并显示的帧数)";
     m_frameCount = 0;
     emit fpsUpdated(m_currentFPS);
 }

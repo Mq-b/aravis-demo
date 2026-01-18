@@ -44,12 +44,12 @@ void VideoWidget::paintEvent(QPaintEvent *event)
     if (imageSize.width() <= targetRect.width() && imageSize.height() <= targetRect.height()) {
         int x = (targetRect.width() - imageSize.width()) / 2;
         int y = (targetRect.height() - imageSize.height()) / 2;
-        painter.drawImage(x, y, m_frame);
+        painter.drawImage(x, y, std::move(m_frame));
     } else {
         QSize scaledSize = imageSize.scaled(targetRect.size(), Qt::KeepAspectRatio);
         int x = (targetRect.width() - scaledSize.width()) / 2;
         int y = (targetRect.height() - scaledSize.height()) / 2;
         QRect drawRect(x, y, scaledSize.width(), scaledSize.height());
-        painter.drawImage(drawRect, m_frame);
+        painter.drawImage(drawRect, std::move(m_frame));
     }
 }

@@ -98,9 +98,13 @@ private:
     QString m_cameraVendor;
     QString m_cameraSerial;
 
-    int m_frameCount;
+    int m_frameCount;          // Qt层发送的帧数
     double m_currentFPS;
     double m_maxFPS = 120.0;
+
+    // Aravis底层统计
+    int m_arvReceivedCount;    // arv_stream_try_pop_buffer 获取到的总帧数
+    int m_arvSuccessCount;     // 状态为SUCCESS的帧数
 };
 
 #endif // CAMERACONTROLLER_H
