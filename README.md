@@ -8,9 +8,7 @@
 >
 > **版本选型**：Aravis `0.9.1` 目前为 **Pre-release（预发布）** 版本。若追求更高稳定性，建议使用最新正式版 [`0.8.35`](https://www.google.com/search?q=[https://github.com/AravisProject/aravis/releases/tag/0.8.35](https://github.com/AravisProject/aravis/releases/tag/0.8.35))。
 >
-> **便捷集成**：由于 Aravis 依赖项较多，手动编译复杂度较高。推荐通过 `vcpkg` 包管理器一键安装正式版。
->
-> **注意事项**：若切换至 `0.8.35` 版本，请务必同步修改 `CMakeLists.txt` 中的 `pkg_check_modules` 版本参数以确保匹配。
+> 然而本项目不管是 `CMakeLists.txt` 还是代码，均要求使用 `0.9.1` 版本，不兼容 `0.8.35` 及更早版本，例如 `arv_camera_create_stream` 函数在 `0.9.1` 中就与 `0.8.35` 不同。
 
 ## 无需厂商驱动
 
