@@ -2,6 +2,8 @@
 
 基于 [Aravis](https://github.com/AravisProject/aravis) 开源库和 Qt5 框架开发的 Windows GenICam 工业相机控制软件。
 
+它支持 `USB3 Vision` 和 `GigE Vision` 工业相机，提供基本的相机连接、参数调节和图像采集功能，且无需安装任何相机厂商驱动不依赖任何厂家 SDK。
+
 > [!NOTE]
 >
 > **开发环境**：本项目基于 **Aravis 0.9.1** 与 **Qt 5.12+** 构建。
@@ -9,6 +11,13 @@
 > **版本选型**：Aravis `0.9.1` 目前为 **Pre-release（预发布）** 版本。若追求更高稳定性，建议使用最新正式版 [`0.8.35`](https://www.google.com/search?q=[https://github.com/AravisProject/aravis/releases/tag/0.8.35](https://github.com/AravisProject/aravis/releases/tag/0.8.35))。
 >
 > 然而本项目不管是 `CMakeLists.txt` 还是代码，均要求使用 `0.9.1` 版本，不兼容 `0.8.35` 及更早版本，例如 `arv_camera_create_stream` 函数在 `0.9.1` 中就与 `0.8.35` 不同。
+>
+
+> [!WARNING]
+>
+> **项目定位与局限性声明**： 本项目仅作为 **Aravis 库集成 GenICam 标准**的验证原型（PoC）。其核心价值在于验证跨厂商的通用性，即在不依赖特定相机厂商 SDK 的情况下，实现对 `USB3 Vision` 与 `GigE Vision` 协议的标准化接入。
+>
+> **性能说明**： 文档以及代码中提及的“120 FPS 采集速率”受限于特定测试硬件的物理属性及带宽限制。实际应用中的帧率表现取决于相机硬件规格、传输协议带宽以及主机端的数据处理能力，软件层仅提供透明的数据流转发。
 
 ## 无需厂商驱动
 
@@ -30,6 +39,8 @@
 
 **原理：** `Aravis` 直接解析相机内部的 `GenICam XML`，通过 `WinUSB` 读写寄存器和图像流，**完全绕过厂商 SDK**。
 
+而 `GigE Vision` 相机则通过标准以太网协议通信，无需额外驱动，`Aravis` 已经内置支持。
+
 > [!IMPORTANT]
 >
 > [`GenICam`](https://www.emva.org/standards-technology/genicam/genicam-downloads/) 是一套全球标准，用来将工业相机与计算机软件应用（如机器视觉）衔接起来。它可实现图像处理、采集和传输中的措辞、接口和过程的同质化。
@@ -48,7 +59,8 @@
 
 **GigE Vision 网口相机：**
 
-- 无需额外驱动，直接通过以太网通信
+1. 无需额外驱动，直接通过以太网通信，但是需要用户配置相机和电脑的 IP 地址在同一网段。
+2. 注意关闭防火墙，确保 Aravis 能够访问相机。
 
 ## 项目特点
 
